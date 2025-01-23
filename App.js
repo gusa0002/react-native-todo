@@ -1,16 +1,22 @@
-import { FlatList, StyleSheet, Text, View, Modal, TextInput, Pressable} from 'react-native';
+import { FlatList, StyleSheet, Text, View, Modal, TextInput, Pressable, Image} from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import FAB from "./components/FAB";
 import CheckButton from './components/CheckButton';
 import CustomInputView from './components/CustomInputView';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, use } from 'react';
 import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 import AntDesign from '@expo/vector-icons/AntDesign';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import * as MediaLibrary from 'expo-media-library';
+// Delete later
+// import RNFS from 'react-native-fs';
 
-const storageKey = "testAssignmentKey2"
+
+const storageKey = "testAssignmentKey3"
 
 
 export default function App() {
@@ -24,7 +30,12 @@ export default function App() {
   const [descriptionError, setDescriptionError] = useState("")
   const [location, setLocation] = useState("");
   const [locationError, setLocationError] = useState("");
-  const [sortShowCompleted,setSortShowCompleted] = useState(true)
+  const [sortShowCompleted,setSortShowCompleted] = useState(true);
+  const [image, setImage] = useState("");
+
+  const [showTaskDetails, setShowTaskDetails] = useState(false);
+  const [showContent, setShowContent] = useState(false)
+  const [selectedTask, setSelectedTask] = useState("");
   
   const isFirstRender = useRef(true);
   const [data, setData] = useState([]);
@@ -32,11 +43,23 @@ export default function App() {
     async function getDataFromStorage() {
       let data = await getData();
       data = data ? data : [];
+      console.log("DATA", data);
+      MediaLibrary.requestPermissionsAsync()
       setData(data)
     };
     getDataFromStorage();
     isFirstRender.current = false;
   },[]);
+  useEffect(() => {
+    if (isVisible) {
+      const timer = setTimeout(() => {
+        setShowContent(true);
+      }, 100); 
+      return () => clearTimeout(timer);
+    } else {
+      setShowContent(false);
+    }
+  },[isVisible])
 
 
   //=================
@@ -65,7 +88,7 @@ export default function App() {
 
   function saveTask() {
     const date = getCurrentDate();
-    const taskObject = {title, description, date, location, id:uuidv4(), completed: false};
+    const taskObject = {title, description, date, location, id:uuidv4(), completed: false, image};
     setData(currentData => {
       const updatedData = currentData?.length ? [...currentData, taskObject] : [taskObject];
       putData(updatedData);
@@ -90,6 +113,8 @@ export default function App() {
     setTitleError("");
     setDescriptionError("");
     setLocationError("");
+    setImage("");
+    setShowTaskDetails(false);
   }
 
   function renderRightActions(id) {
@@ -133,7 +158,7 @@ export default function App() {
     setData((currentData) => {
       let updatedData = currentData.map((item) => {
         if (item.id == id) {
-          return {title: item.title, description: item.description, location: item.location, date:item.date, id: item.id, completed: newState}
+          return {title: item.title, description: item.description, location: item.location, date:item.date, id: item.id, completed: newState, image: item.image}
         }
         return item;
       });
@@ -160,6 +185,29 @@ export default function App() {
       console.log("Error with storing data", error);
     }
   };
+
+  async function pickupDocument() {
+    const document = await DocumentPicker.getDocumentAsync({
+      type: 'image/*',
+    });
+    if (document && document.assets.length) {
+      const uri = document.assets[0].uri;
+      const name = document.assets[0].name;
+      const imageDirectory = FileSystem.documentDirectory;      
+      const newUri = `${imageDirectory}${name}`;
+      try {
+        await FileSystem.copyAsync({
+          from: uri,
+          to: newUri,
+        });
+        setImage(newUri);
+      } catch (error) {
+        setImage(uri);
+      }
+    }else{
+      console.log("The image wasn't selected");
+    }
+  }
 
 
   //=================
@@ -205,6 +253,13 @@ export default function App() {
                           <Text style={styles.taskLabel}>Location: </Text>
                           <Text style={styles.taskInfo}>{item.location}</Text>
                         </View>
+                        <Pressable style={styles.taskTextContainer} onPress={() => {
+                          setShowTaskDetails(true);
+                          setIsVisible(true);
+                          setSelectedTask(item);
+                          }}>
+                          <Text>More info</Text>
+                        </Pressable>
                       </View>
                       <View style={{minWidth:"40"}}>
                         <CheckButton state={item.completed} updateCompletionState={updateCompletionState} id={item.id}/>
@@ -216,18 +271,71 @@ export default function App() {
           }
           <FAB setIsVisible={setIsVisible}/>
           <Modal
-            transparent={true}
+            transparent={true}a
             visible={isVisible}
             onRequestClose={() => setIsVisible(false)}
           >
             <View style={styles.overlay}>
               <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Add a New Task</Text>
+                {/* FAB CLICKED */}
+                {!showTaskDetails && <View style={{opacity: showContent? 1 : 0}}>
+                  <Text style={styles.modalTitle}>Add a New Task</Text>
+                  <CustomInputView placeholder="Title" value={title} setValue={setTitle} error={titleError}/>
+                  <CustomInputView placeholder="Description" value={description} setValue={setDescription} error={descriptionError} />
+                  <CustomInputView placeholder="Location" value={location} setValue={setLocation} error={locationError} />
+                  <View>
+                    {image && <Image source={{uri: image}} style={{width: 80, marginHorizontal:"auto",height: 80,borderRadius: 100}} />}
+                    <Pressable onPress={pickupDocument}>
+                      <Text style={{textAlign:"center"}}>Select file</Text>
+                    </Pressable>
+                    <View style={styles.buttonContainer}>
+                      <Pressable style={styles.saveButton} onPress={() => {
+                        let isValidData = checkInput();
+                        if (isValidData) {
+                          saveTask();
+                          closeModal();
+                        }
+                      }}>
+                        <Text style={styles.buttonText}>Save</Text>
+                      </Pressable>
+                      <Pressable style={styles.cancelButton} onPress={() => {
+                        closeModal();
+                      }}>
+                        <Text style={styles.buttonText}>Cancel</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+                }
+                {/* MORE DETAILS CLICKED */}
+                {showTaskDetails && <View style={{opacity: showContent? 1 : 0}}>
+                  <Text>{selectedTask.id}</Text>
+                  <Image source={{uri: selectedTask.image}} style={{width: 80, marginHorizontal:"auto",height: 80,borderRadius: 100}}/>
+                  <View style={styles.buttonContainer}>
+                    <Pressable style={styles.saveButton} onPress={() => {
+                      let isValidData = checkInput();
+                      if (isValidData) {
+                        saveTask();
+                        closeModal();
+                      }
+                    }}>
+                      <Text style={styles.buttonText}>Save</Text>
+                    </Pressable>
+                    <Pressable style={styles.cancelButton} onPress={() => {
+                      closeModal();
+                    }}>
+                      <Text style={styles.buttonText}>Cancel</Text>
+                    </Pressable>
+                  </View>
+                </View>}
+
+                {/* <Text style={styles.modalTitle}>Add a New Task</Text>
                 <CustomInputView placeholder="Title" value={title} setValue={setTitle} error={titleError}/>
                 <CustomInputView placeholder="Description" value={description} setValue={setDescription} error={descriptionError} />
-                <CustomInputView placeholder="Location" value={location} setValue={setLocation} error={locationError} />
+                <CustomInputView placeholder="Location" value={location} setValue={setLocation} error={locationError} /> */}
+                {/* TODO:  */}
 
-                <View style={styles.buttonContainer}>
+                {/* <View style={styles.buttonContainer}>
                   <Pressable style={styles.saveButton} onPress={() => {
                     let isValidData = checkInput();
                     if (isValidData) {
@@ -242,7 +350,7 @@ export default function App() {
                   }}>
                     <Text style={styles.buttonText}>Cancel</Text>
                   </Pressable>
-                </View>
+                </View> */}
 
               </View>
             </View>
@@ -381,5 +489,5 @@ const styles = StyleSheet.create({
   },
   locationColor: {
     backgroundColor: "#FFF8E8"
-  }
+  },
 });
