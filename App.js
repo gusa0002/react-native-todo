@@ -14,9 +14,16 @@ import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 // Delete later
 // import RNFS from 'react-native-fs';
+import MapView from 'react-native-maps';
 
 
-const storageKey = "testAssignmentKey3"
+const storageKey = "testAssignmentKey3";
+const initialRegion = {
+  latitude: 45.424721,
+  longitude: -75.695000,
+  latitudeDelta: 0.0922,
+  longitudeDelta: 0.0421,
+};
 
 
 export default function App() {
@@ -36,6 +43,7 @@ export default function App() {
   const [showTaskDetails, setShowTaskDetails] = useState(false);
   const [showContent, setShowContent] = useState(false)
   const [selectedTask, setSelectedTask] = useState("");
+  const [selectedLocation, setSelectedLocation] = useState(false);
   
   const isFirstRender = useRef(true);
   const [data, setData] = useState([]);
@@ -49,6 +57,7 @@ export default function App() {
     };
     getDataFromStorage();
     isFirstRender.current = false;
+    
   },[]);
   useEffect(() => {
     if (isVisible) {
@@ -88,7 +97,7 @@ export default function App() {
 
   function saveTask() {
     const date = getCurrentDate();
-    const taskObject = {title, description, date, location, id:uuidv4(), completed: false, image};
+    const taskObject = {title, description, date, location, id:uuidv4(), completed: false, image, selectedLocation};
     setData(currentData => {
       const updatedData = currentData?.length ? [...currentData, taskObject] : [taskObject];
       putData(updatedData);
@@ -115,6 +124,7 @@ export default function App() {
     setLocationError("");
     setImage("");
     setShowTaskDetails(false);
+    setSelectedLocation(false);
   }
 
   function renderRightActions(id) {
@@ -158,7 +168,7 @@ export default function App() {
     setData((currentData) => {
       let updatedData = currentData.map((item) => {
         if (item.id == id) {
-          return {title: item.title, description: item.description, location: item.location, date:item.date, id: item.id, completed: newState, image: item.image}
+          return {title: item.title, description: item.description, location: item.location, date:item.date, id: item.id, completed: newState, image: item.image, selectedLocation: item.selectedLocation}
         }
         return item;
       });
@@ -253,7 +263,7 @@ export default function App() {
                           <Text style={styles.taskLabel}>Location: </Text>
                           <Text style={styles.taskInfo}>{item.location}</Text>
                         </View>
-                        <Pressable style={styles.taskTextContainer} onPress={() => {
+                        <Pressable style={styles.showMoreButton} onPress={() => {
                           setShowTaskDetails(true);
                           setIsVisible(true);
                           setSelectedTask(item);
@@ -286,31 +296,22 @@ export default function App() {
                   <View>
                     {image && <Image source={{uri: image}} style={{width: 80, marginHorizontal:"auto",height: 80,borderRadius: 100}} />}
                     <Pressable onPress={pickupDocument}>
-                      <Text style={{textAlign:"center"}}>Select file</Text>
+                      <Text style={{textAlign:"center", color: image?.length < 1? "red" : "green"}}>Select file</Text>
                     </Pressable>
-                    <View style={styles.buttonContainer}>
-                      <Pressable style={styles.saveButton} onPress={() => {
-                        let isValidData = checkInput();
-                        if (isValidData) {
-                          saveTask();
-                          closeModal();
-                        }
-                      }}>
-                        <Text style={styles.buttonText}>Save</Text>
-                      </Pressable>
-                      <Pressable style={styles.cancelButton} onPress={() => {
-                        closeModal();
-                      }}>
-                        <Text style={styles.buttonText}>Cancel</Text>
-                      </Pressable>
-                    </View>
                   </View>
-                </View>
-                }
-                {/* MORE DETAILS CLICKED */}
-                {showTaskDetails && <View style={{opacity: showContent? 1 : 0}}>
-                  <Text>{selectedTask.id}</Text>
-                  <Image source={{uri: selectedTask.image}} style={{width: 80, marginHorizontal:"auto",height: 80,borderRadius: 100}}/>
+                  <MapView
+                    style={{ flex: 1, maxHeight: 200 }}
+                    onRegionChangeComplete={region => {
+                      const  {latitude,longitude,latitudeDelta,longitudeDelta} = region;
+                      setSelectedLocation({
+                        latitude,
+                        longitude,
+                        latitudeDelta,
+                        longitudeDelta
+                      });
+                    }}
+                    initialRegion={initialRegion}
+                  />
                   <View style={styles.buttonContainer}>
                     <Pressable style={styles.saveButton} onPress={() => {
                       let isValidData = checkInput();
@@ -327,31 +328,29 @@ export default function App() {
                       <Text style={styles.buttonText}>Cancel</Text>
                     </Pressable>
                   </View>
-                </View>}
-
-                {/* <Text style={styles.modalTitle}>Add a New Task</Text>
-                <CustomInputView placeholder="Title" value={title} setValue={setTitle} error={titleError}/>
-                <CustomInputView placeholder="Description" value={description} setValue={setDescription} error={descriptionError} />
-                <CustomInputView placeholder="Location" value={location} setValue={setLocation} error={locationError} /> */}
-                {/* TODO:  */}
-
-                {/* <View style={styles.buttonContainer}>
-                  <Pressable style={styles.saveButton} onPress={() => {
-                    let isValidData = checkInput();
-                    if (isValidData) {
-                      saveTask();
+                  {/*  */}
+                </View>
+                }
+                {/* MORE DETAILS CLICKED */}
+                {showTaskDetails && <View style={{opacity: showContent? 1 : 0}}>
+                  <Text>{selectedTask.id}</Text>
+                  <Image source={{uri: selectedTask.image}} style={{width: 80, marginHorizontal:"auto",height: 80,borderRadius: 100}}/>
+                  <MapView
+                    style={{ flex: 1, maxHeight: 200 }}
+                    onRegionChangeComplete={region => {
+                      const  {latitude,longitude,latitudeDelta,longitudeDelta} = region;
+                      setSelectedLocation(initialRegion);
+                    }}
+                    initialRegion={selectedTask?.selectedLocation ? selectedTask.selectedLocation : initialRegion }
+                  />
+                  <View style={styles.buttonContainer}>
+                    <Pressable style={styles.cancelButton} onPress={() => {
                       closeModal();
-                    }
-                  }}>
-                    <Text style={styles.buttonText}>Save</Text>
-                  </Pressable>
-                  <Pressable style={styles.cancelButton} onPress={() => {
-                    closeModal();
-                  }}>
-                    <Text style={styles.buttonText}>Cancel</Text>
-                  </Pressable>
-                </View> */}
-
+                    }}>
+                      <Text style={styles.buttonText}>Close</Text>
+                    </Pressable>
+                  </View>
+                </View>}
               </View>
             </View>
           </Modal>
@@ -466,6 +465,14 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 15,
     width:"90%",
+    color:"#3A3A3A",
+  },
+  showMoreButton: {
+    marginVertical: 3,
+    borderRadius: 20,
+    paddingVertical: 5,
+    paddingHorizontal: 15,
+    width:"30%",
     color:"#3A3A3A",
   },
   taskLabel: {
