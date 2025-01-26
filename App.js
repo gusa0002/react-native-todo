@@ -1,4 +1,4 @@
-import { FlatList, StyleSheet, Text, View, Modal, TextInput, Pressable, Image, LogBox} from 'react-native';
+import { FlatList, StyleSheet, Text, View, Modal, TextInput, Pressable, Image} from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import FAB from "./components/FAB";
 import CheckButton from './components/CheckButton';
@@ -14,6 +14,7 @@ import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import MapView from 'react-native-maps';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as Notifications from 'expo-notifications';
 
 const storageKey = "testAssignmentKey3";
 const initialRegion = {
@@ -23,7 +24,6 @@ const initialRegion = {
   longitudeDelta: 0.0421,
 };
 const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-
 
 export default function App() {
   //=================
@@ -55,10 +55,27 @@ export default function App() {
     async function getDataFromStorage() {
       let data = await getData();
       data = data ? data : [];
-      console.log("DATA", data);
       MediaLibrary.requestPermissionsAsync()
       setData(data)
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+        }),
+      });
+      if (isFirstRender) {
+        setNotifications(data);
+      }
     };
+    const requestPermissions = async () => {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        alert('Permission to show notifications is required!');
+      }
+    };
+    
+    requestPermissions();
     getDataFromStorage();
     isFirstRender.current = false;
   },[]);
@@ -71,12 +88,44 @@ export default function App() {
     } else {
       setShowContent(false);
     }
-  },[isVisible])
+  },[isVisible]);
+
 
 
   //=================
   // Functions
   //=================
+  function setNotifications(data) {
+    const thirtyMinutes = 30 * 60;
+    const now = new Date().getTime();
+
+    data.forEach(task => {
+      const taskTime = new Date(task.timeStamp).getTime();
+      const leftTime = taskTime - now;
+      let reminderTime = leftTime > thirtyMinutes ? (leftTime - thirtyMinutes) : 0;
+      if (leftTime <= 0) {
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Todo App",
+            body: `The due date for task ${task.title.toUpperCase()} has expired!"`
+          },
+          trigger: {
+            seconds: reminderTime
+          }
+        });
+      }else{
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Todo App",
+            body: `It's the time to do task ${task.title.toUpperCase()}! You have ${reminderTime == 10? "less than" : ""} 30 minutes left!"`
+          },
+          trigger: {
+            seconds: reminderTime
+          }
+        });
+      }
+    })
+  };
   function checkInput(){
     let countOfErrors = 0;
     if (title.length < 1) {
@@ -104,11 +153,12 @@ export default function App() {
   function saveTask() {
     const date = getCurrentDate();
     const taskObject = {title, description, date, location, id:uuidv4(), completed: false, image, selectedLocation, timeStamp: fullTimeInfo.timeStamp};
+    setNotifications([taskObject]);
     setData(currentData => {
       const updatedData = currentData?.length ? [...currentData, taskObject] : [taskObject];
       putData(updatedData);
       return updatedData;
-    })
+    });
   }
 
   function getCurrentDate() {
@@ -241,12 +291,11 @@ export default function App() {
   }
 
   const onChangeDate = (ev, selectedDate) => {
-    if (ev.type === 'dismissed') {
-      console.log('Picker was dismissed');
+    if (ev.type === "dismissed") {
       setShowDatePicker(false);
       return;
     }
-    if (ev.type === 'set' && selectedDate) {
+    if (ev.type === "set" && selectedDate) {
       const date = new Date(selectedDate);
       const year = date.getFullYear();
       const month = date.getMonth();
@@ -258,9 +307,7 @@ export default function App() {
         month,
         day,
         dateSet: true
-      }));
-      console.log("TEST POINt, ", `${months[month]} ${day}, ${year}`);
-      
+      }));      
       setSelectedDate(`${months[month]} ${day}, ${year}`);
     }
   };
@@ -386,7 +433,7 @@ export default function App() {
                   {showDatePicker &&
                     <DateTimePicker
                       value={new Date()}
-                      mode="date" // can also be 'time' or 'datetime'
+                      mode="date"
                       display="default"
                       onChange={onChangeDate}
                     />
@@ -426,12 +473,10 @@ export default function App() {
                 }
                 {/* MORE DETAILS CLICKED */}
                 {showTaskDetails && <View style={{opacity: showContent? 1 : 0}}>
-                  <Text>{selectedTask.id}</Text>
-                  {/* TODO: DELETE ? for production */}
-                  <Text>{selectedTask?.timeStamp 
+                  <Text>{selectedTask.timeStamp 
                   ? `${getDateString(selectedTask.timeStamp)}`
                   :"No Selected date" }</Text>
-                  <Image source={{uri: selectedTask.image}} style={{width: 80, marginHorizontal:"auto",height: 80,borderRadius: 100}}/>
+                  <Image source={{uri: selectedTask.image? selectedTask.image : "https://picsum.photos/200" }} style={{width: 80, marginHorizontal:"auto",height: 80,borderRadius: 100}}/>
                   <MapView
                     style={{ flex: 1, maxHeight: 200 }}
                     onRegionChangeComplete={region => {
