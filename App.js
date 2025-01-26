@@ -1,4 +1,4 @@
-import { FlatList, StyleSheet, Text, View, Modal, TextInput, Pressable, Image} from 'react-native';
+import { FlatList, StyleSheet, Text, View, Modal, TextInput, Pressable, Image, LogBox} from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import FAB from "./components/FAB";
 import CheckButton from './components/CheckButton';
@@ -12,10 +12,8 @@ import { v4 as uuidv4 } from 'uuid';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
-// Delete later
-// import RNFS from 'react-native-fs';
 import MapView from 'react-native-maps';
-
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 const storageKey = "testAssignmentKey3";
 const initialRegion = {
@@ -24,6 +22,7 @@ const initialRegion = {
   latitudeDelta: 0.0922,
   longitudeDelta: 0.0421,
 };
+const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 
 export default function App() {
@@ -44,7 +43,12 @@ export default function App() {
   const [showContent, setShowContent] = useState(false)
   const [selectedTask, setSelectedTask] = useState("");
   const [selectedLocation, setSelectedLocation] = useState(false);
-  
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [selectedDate, setSelectedDate] = useState("")
+  const [selectedTime, setSelectedTime] = useState("")
+  const [fullTimeInfo, setFullTimeInfo] = useState({});
+
   const isFirstRender = useRef(true);
   const [data, setData] = useState([]);
   useEffect(() => {
@@ -57,7 +61,6 @@ export default function App() {
     };
     getDataFromStorage();
     isFirstRender.current = false;
-    
   },[]);
   useEffect(() => {
     if (isVisible) {
@@ -88,6 +91,9 @@ export default function App() {
       setLocationError("Please type at least 3 character")
       countOfErrors++;
     }
+    if (!fullTimeInfo?.dateSet || !fullTimeInfo?.timeSet) {
+      countOfErrors++;
+    }
     if (countOfErrors == 0) {
       return true
     }else{
@@ -97,7 +103,7 @@ export default function App() {
 
   function saveTask() {
     const date = getCurrentDate();
-    const taskObject = {title, description, date, location, id:uuidv4(), completed: false, image, selectedLocation};
+    const taskObject = {title, description, date, location, id:uuidv4(), completed: false, image, selectedLocation, timeStamp: fullTimeInfo.timeStamp};
     setData(currentData => {
       const updatedData = currentData?.length ? [...currentData, taskObject] : [taskObject];
       putData(updatedData);
@@ -125,6 +131,11 @@ export default function App() {
     setImage("");
     setShowTaskDetails(false);
     setSelectedLocation(false);
+    setShowTimePicker(false);
+    setShowDatePicker(false);
+    setSelectedDate("");
+    setSelectedTime("");
+    setFullTimeInfo({});
   }
 
   function renderRightActions(id) {
@@ -168,7 +179,7 @@ export default function App() {
     setData((currentData) => {
       let updatedData = currentData.map((item) => {
         if (item.id == id) {
-          return {title: item.title, description: item.description, location: item.location, date:item.date, id: item.id, completed: newState, image: item.image, selectedLocation: item.selectedLocation}
+          return {title: item.title, description: item.description, location: item.location, date:item.date, id: item.id, completed: newState, image: item.image, selectedLocation: item.selectedLocation, timeStamp: item.timeStamp}
         }
         return item;
       });
@@ -196,6 +207,16 @@ export default function App() {
     }
   };
 
+  const getDateString = (timeStamp) => {
+    const date = new Date(timeStamp);
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const day = date.getDate();
+    const hours = date.getHours().toString().padStart(2, "0");
+    const minutes = date.getMinutes().toString().padStart(2, "0");
+    return `${months[month]} ${day}, ${year} - ${hours}:${minutes}`
+  }
+
   async function pickupDocument() {
     const document = await DocumentPicker.getDocumentAsync({
       type: 'image/*',
@@ -218,6 +239,53 @@ export default function App() {
       console.log("The image wasn't selected");
     }
   }
+
+  const onChangeDate = (ev, selectedDate) => {
+    if (ev.type === 'dismissed') {
+      console.log('Picker was dismissed');
+      setShowDatePicker(false);
+      return;
+    }
+    if (ev.type === 'set' && selectedDate) {
+      const date = new Date(selectedDate);
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const day = date.getDate();
+      setShowDatePicker(false);
+      setFullTimeInfo(current => ({
+        ...current,
+        year,
+        month,
+        day,
+        dateSet: true
+      }));
+      console.log("TEST POINt, ", `${months[month]} ${day}, ${year}`);
+      
+      setSelectedDate(`${months[month]} ${day}, ${year}`);
+    }
+  };
+
+  const onChangeTime = (ev, selectedTime) => {
+    const date = new Date(selectedDate);    
+    if (ev.type === "dismissed") {
+      setShowTimePicker(false);
+      return;
+    }
+    if (ev.type === "set" && selectedTime) {
+      const time = new Date(selectedTime);
+      const hours = time.getHours();
+      const minutes = time.getMinutes();
+      setShowTimePicker(false);
+      setFullTimeInfo(current => ({
+        ...current,
+        hours,
+        minutes,
+        timeSet: true
+      }))
+      setSelectedTime(`${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`);
+    }
+  };
+  
 
 
   //=================
@@ -312,9 +380,34 @@ export default function App() {
                     }}
                     initialRegion={initialRegion}
                   />
+                  <Pressable onPress={current => setShowDatePicker(true)}>
+                      <Text style={{textAlign:"center", color: selectedDate?.length < 1? "red" : "green"}}>{selectedDate.length ? selectedDate : "Select Date"}</Text>
+                  </Pressable>
+                  {showDatePicker &&
+                    <DateTimePicker
+                      value={new Date()}
+                      mode="date" // can also be 'time' or 'datetime'
+                      display="default"
+                      onChange={onChangeDate}
+                    />
+                  }
+                  <Pressable onPress={current => setShowTimePicker(true)}>
+                      <Text style={{textAlign:"center", color: selectedTime?.length < 1? "red" : "green"}}>{selectedTime.length ? selectedTime : "Select time"}</Text>
+                  </Pressable>
+                  {showTimePicker &&
+                    <DateTimePicker
+                      value={new Date()}
+                      mode="time"
+                      display="default"
+                      onChange={onChangeTime}
+                    />
+                  }
                   <View style={styles.buttonContainer}>
                     <Pressable style={styles.saveButton} onPress={() => {
                       let isValidData = checkInput();
+                      const {year, month, day, hours, minutes} = fullTimeInfo;
+                      const timeStamp = new Date(year,month, day, hours, minutes)
+                      fullTimeInfo.timeStamp = timeStamp;
                       if (isValidData) {
                         saveTask();
                         closeModal();
@@ -334,6 +427,10 @@ export default function App() {
                 {/* MORE DETAILS CLICKED */}
                 {showTaskDetails && <View style={{opacity: showContent? 1 : 0}}>
                   <Text>{selectedTask.id}</Text>
+                  {/* TODO: DELETE ? for production */}
+                  <Text>{selectedTask?.timeStamp 
+                  ? `${getDateString(selectedTask.timeStamp)}`
+                  :"No Selected date" }</Text>
                   <Image source={{uri: selectedTask.image}} style={{width: 80, marginHorizontal:"auto",height: 80,borderRadius: 100}}/>
                   <MapView
                     style={{ flex: 1, maxHeight: 200 }}
