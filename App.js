@@ -1,17 +1,29 @@
-import { FlatList, StyleSheet, Text, View, Modal, TextInput, Pressable} from 'react-native';
+import { FlatList, StyleSheet, Text, View, Modal, TextInput, Pressable, Image} from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import FAB from "./components/FAB";
 import CheckButton from './components/CheckButton';
 import CustomInputView from './components/CustomInputView';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, use } from 'react';
 import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 import AntDesign from '@expo/vector-icons/AntDesign';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import * as MediaLibrary from 'expo-media-library';
+import MapView from 'react-native-maps';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import * as Notifications from 'expo-notifications';
 
-const storageKey = "testAssignmentKey2"
-
+const storageKey = "testAssignmentKey3";
+const initialRegion = {
+  latitude: 45.424721,
+  longitude: -75.695000,
+  latitudeDelta: 0.0922,
+  longitudeDelta: 0.0421,
+};
+const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 export default function App() {
   //=================
@@ -24,24 +36,96 @@ export default function App() {
   const [descriptionError, setDescriptionError] = useState("")
   const [location, setLocation] = useState("");
   const [locationError, setLocationError] = useState("");
-  const [sortShowCompleted,setSortShowCompleted] = useState(true)
-  
+  const [sortShowCompleted,setSortShowCompleted] = useState(true);
+  const [image, setImage] = useState("");
+
+  const [showTaskDetails, setShowTaskDetails] = useState(false);
+  const [showContent, setShowContent] = useState(false)
+  const [selectedTask, setSelectedTask] = useState("");
+  const [selectedLocation, setSelectedLocation] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [selectedDate, setSelectedDate] = useState("")
+  const [selectedTime, setSelectedTime] = useState("")
+  const [fullTimeInfo, setFullTimeInfo] = useState({});
+
   const isFirstRender = useRef(true);
   const [data, setData] = useState([]);
   useEffect(() => {
     async function getDataFromStorage() {
       let data = await getData();
       data = data ? data : [];
+      MediaLibrary.requestPermissionsAsync()
       setData(data)
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+        }),
+      });
+      if (isFirstRender) {
+        setNotifications(data);
+      }
     };
+    const requestPermissions = async () => {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        alert('Permission to show notifications is required!');
+      }
+    };
+    
+    requestPermissions();
     getDataFromStorage();
     isFirstRender.current = false;
   },[]);
+  useEffect(() => {
+    if (isVisible) {
+      const timer = setTimeout(() => {
+        setShowContent(true);
+      }, 100); 
+      return () => clearTimeout(timer);
+    } else {
+      setShowContent(false);
+    }
+  },[isVisible]);
+
 
 
   //=================
   // Functions
   //=================
+  function setNotifications(data) {
+    const thirtyMinutes = 30 * 60;
+    const now = new Date().getTime();
+
+    data.forEach(task => {
+      const taskTime = new Date(task.timeStamp).getTime();
+      const leftTime = taskTime - now;
+      let reminderTime = leftTime > thirtyMinutes ? (leftTime - thirtyMinutes) : 0;
+      if (leftTime <= 0) {
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Todo App",
+            body: `The due date for task ${task.title.toUpperCase()} has expired!"`
+          },
+          trigger: {
+            seconds: reminderTime
+          }
+        });
+      }else{
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Todo App",
+            body: `It's the time to do task ${task.title.toUpperCase()}! You have ${reminderTime == 10? "less than" : ""} 30 minutes left!"`
+          },
+          trigger: {
+            seconds: reminderTime
+          }
+        });
+      }
+    })
+  };
   function checkInput(){
     let countOfErrors = 0;
     if (title.length < 1) {
@@ -56,6 +140,9 @@ export default function App() {
       setLocationError("Please type at least 3 character")
       countOfErrors++;
     }
+    if (!fullTimeInfo?.dateSet || !fullTimeInfo?.timeSet) {
+      countOfErrors++;
+    }
     if (countOfErrors == 0) {
       return true
     }else{
@@ -65,12 +152,13 @@ export default function App() {
 
   function saveTask() {
     const date = getCurrentDate();
-    const taskObject = {title, description, date, location, id:uuidv4(), completed: false};
+    const taskObject = {title, description, date, location, id:uuidv4(), completed: false, image, selectedLocation, timeStamp: fullTimeInfo.timeStamp};
+    setNotifications([taskObject]);
     setData(currentData => {
       const updatedData = currentData?.length ? [...currentData, taskObject] : [taskObject];
       putData(updatedData);
       return updatedData;
-    })
+    });
   }
 
   function getCurrentDate() {
@@ -90,6 +178,14 @@ export default function App() {
     setTitleError("");
     setDescriptionError("");
     setLocationError("");
+    setImage("");
+    setShowTaskDetails(false);
+    setSelectedLocation(false);
+    setShowTimePicker(false);
+    setShowDatePicker(false);
+    setSelectedDate("");
+    setSelectedTime("");
+    setFullTimeInfo({});
   }
 
   function renderRightActions(id) {
@@ -133,7 +229,7 @@ export default function App() {
     setData((currentData) => {
       let updatedData = currentData.map((item) => {
         if (item.id == id) {
-          return {title: item.title, description: item.description, location: item.location, date:item.date, id: item.id, completed: newState}
+          return {title: item.title, description: item.description, location: item.location, date:item.date, id: item.id, completed: newState, image: item.image, selectedLocation: item.selectedLocation, timeStamp: item.timeStamp}
         }
         return item;
       });
@@ -160,6 +256,83 @@ export default function App() {
       console.log("Error with storing data", error);
     }
   };
+
+  const getDateString = (timeStamp) => {
+    const date = new Date(timeStamp);
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const day = date.getDate();
+    const hours = date.getHours().toString().padStart(2, "0");
+    const minutes = date.getMinutes().toString().padStart(2, "0");
+    return `${months[month]} ${day}, ${year} - ${hours}:${minutes}`
+  }
+
+  async function pickupDocument() {
+    const document = await DocumentPicker.getDocumentAsync({
+      type: 'image/*',
+    });
+    if (document && document.assets.length) {
+      const uri = document.assets[0].uri;
+      const name = document.assets[0].name;
+      const imageDirectory = FileSystem.documentDirectory;      
+      const newUri = `${imageDirectory}${name}`;
+      try {
+        await FileSystem.copyAsync({
+          from: uri,
+          to: newUri,
+        });
+        setImage(newUri);
+      } catch (error) {
+        setImage(uri);
+      }
+    }else{
+      console.log("The image wasn't selected");
+    }
+  }
+
+  const onChangeDate = (ev, selectedDate) => {
+    if (ev.type === "dismissed") {
+      setShowDatePicker(false);
+      return;
+    }
+    if (ev.type === "set" && selectedDate) {
+      const date = new Date(selectedDate);
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const day = date.getDate();
+      setShowDatePicker(false);
+      setFullTimeInfo(current => ({
+        ...current,
+        year,
+        month,
+        day,
+        dateSet: true
+      }));      
+      setSelectedDate(`${months[month]} ${day}, ${year}`);
+    }
+  };
+
+  const onChangeTime = (ev, selectedTime) => {
+    const date = new Date(selectedDate);    
+    if (ev.type === "dismissed") {
+      setShowTimePicker(false);
+      return;
+    }
+    if (ev.type === "set" && selectedTime) {
+      const time = new Date(selectedTime);
+      const hours = time.getHours();
+      const minutes = time.getMinutes();
+      setShowTimePicker(false);
+      setFullTimeInfo(current => ({
+        ...current,
+        hours,
+        minutes,
+        timeSet: true
+      }))
+      setSelectedTime(`${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`);
+    }
+  };
+  
 
 
   //=================
@@ -205,6 +378,13 @@ export default function App() {
                           <Text style={styles.taskLabel}>Location: </Text>
                           <Text style={styles.taskInfo}>{item.location}</Text>
                         </View>
+                        <Pressable style={styles.showMoreButton} onPress={() => {
+                          setShowTaskDetails(true);
+                          setIsVisible(true);
+                          setSelectedTask(item);
+                          }}>
+                          <Text>More info</Text>
+                        </Pressable>
                       </View>
                       <View style={{minWidth:"40"}}>
                         <CheckButton state={item.completed} updateCompletionState={updateCompletionState} id={item.id}/>
@@ -216,34 +396,103 @@ export default function App() {
           }
           <FAB setIsVisible={setIsVisible}/>
           <Modal
-            transparent={true}
+            transparent={true}a
             visible={isVisible}
             onRequestClose={() => setIsVisible(false)}
           >
             <View style={styles.overlay}>
               <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Add a New Task</Text>
-                <CustomInputView placeholder="Title" value={title} setValue={setTitle} error={titleError}/>
-                <CustomInputView placeholder="Description" value={description} setValue={setDescription} error={descriptionError} />
-                <CustomInputView placeholder="Location" value={location} setValue={setLocation} error={locationError} />
-
-                <View style={styles.buttonContainer}>
-                  <Pressable style={styles.saveButton} onPress={() => {
-                    let isValidData = checkInput();
-                    if (isValidData) {
-                      saveTask();
+                {/* FAB CLICKED */}
+                {!showTaskDetails && <View style={{opacity: showContent? 1 : 0}}>
+                  <Text style={styles.modalTitle}>Add a New Task</Text>
+                  <CustomInputView placeholder="Title" value={title} setValue={setTitle} error={titleError}/>
+                  <CustomInputView placeholder="Description" value={description} setValue={setDescription} error={descriptionError} />
+                  <CustomInputView placeholder="Location" value={location} setValue={setLocation} error={locationError} />
+                  <View>
+                    {image && <Image source={{uri: image}} style={{width: 80, marginHorizontal:"auto",height: 80,borderRadius: 100}} />}
+                    <Pressable onPress={pickupDocument}>
+                      <Text style={{textAlign:"center", color: image?.length < 1? "red" : "green"}}>Select file</Text>
+                    </Pressable>
+                  </View>
+                  <MapView
+                    style={{ flex: 1, maxHeight: 200 }}
+                    onRegionChangeComplete={region => {
+                      const  {latitude,longitude,latitudeDelta,longitudeDelta} = region;
+                      setSelectedLocation({
+                        latitude,
+                        longitude,
+                        latitudeDelta,
+                        longitudeDelta
+                      });
+                    }}
+                    initialRegion={initialRegion}
+                  />
+                  <Pressable onPress={current => setShowDatePicker(true)}>
+                      <Text style={{textAlign:"center", color: selectedDate?.length < 1? "red" : "green"}}>{selectedDate.length ? selectedDate : "Select Date"}</Text>
+                  </Pressable>
+                  {showDatePicker &&
+                    <DateTimePicker
+                      value={new Date()}
+                      mode="date"
+                      display="default"
+                      onChange={onChangeDate}
+                    />
+                  }
+                  <Pressable onPress={current => setShowTimePicker(true)}>
+                      <Text style={{textAlign:"center", color: selectedTime?.length < 1? "red" : "green"}}>{selectedTime.length ? selectedTime : "Select time"}</Text>
+                  </Pressable>
+                  {showTimePicker &&
+                    <DateTimePicker
+                      value={new Date()}
+                      mode="time"
+                      display="default"
+                      onChange={onChangeTime}
+                    />
+                  }
+                  <View style={styles.buttonContainer}>
+                    <Pressable style={styles.saveButton} onPress={() => {
+                      let isValidData = checkInput();
+                      const {year, month, day, hours, minutes} = fullTimeInfo;
+                      const timeStamp = new Date(year,month, day, hours, minutes)
+                      fullTimeInfo.timeStamp = timeStamp;
+                      if (isValidData) {
+                        saveTask();
+                        closeModal();
+                      }
+                    }}>
+                      <Text style={styles.buttonText}>Save</Text>
+                    </Pressable>
+                    <Pressable style={styles.cancelButton} onPress={() => {
                       closeModal();
-                    }
-                  }}>
-                    <Text style={styles.buttonText}>Save</Text>
-                  </Pressable>
-                  <Pressable style={styles.cancelButton} onPress={() => {
-                    closeModal();
-                  }}>
-                    <Text style={styles.buttonText}>Cancel</Text>
-                  </Pressable>
+                    }}>
+                      <Text style={styles.buttonText}>Cancel</Text>
+                    </Pressable>
+                  </View>
+                  {/*  */}
                 </View>
-
+                }
+                {/* MORE DETAILS CLICKED */}
+                {showTaskDetails && <View style={{opacity: showContent? 1 : 0}}>
+                  <Text>{selectedTask.timeStamp 
+                  ? `${getDateString(selectedTask.timeStamp)}`
+                  :"No Selected date" }</Text>
+                  <Image source={{uri: selectedTask.image? selectedTask.image : "https://picsum.photos/200" }} style={{width: 80, marginHorizontal:"auto",height: 80,borderRadius: 100}}/>
+                  <MapView
+                    style={{ flex: 1, maxHeight: 200 }}
+                    onRegionChangeComplete={region => {
+                      const  {latitude,longitude,latitudeDelta,longitudeDelta} = region;
+                      setSelectedLocation(initialRegion);
+                    }}
+                    initialRegion={selectedTask?.selectedLocation ? selectedTask.selectedLocation : initialRegion }
+                  />
+                  <View style={styles.buttonContainer}>
+                    <Pressable style={styles.cancelButton} onPress={() => {
+                      closeModal();
+                    }}>
+                      <Text style={styles.buttonText}>Close</Text>
+                    </Pressable>
+                  </View>
+                </View>}
               </View>
             </View>
           </Modal>
@@ -360,6 +609,14 @@ const styles = StyleSheet.create({
     width:"90%",
     color:"#3A3A3A",
   },
+  showMoreButton: {
+    marginVertical: 3,
+    borderRadius: 20,
+    paddingVertical: 5,
+    paddingHorizontal: 15,
+    width:"30%",
+    color:"#3A3A3A",
+  },
   taskLabel: {
     fontSize:16, 
     color:"#545454", 
@@ -381,5 +638,5 @@ const styles = StyleSheet.create({
   },
   locationColor: {
     backgroundColor: "#FFF8E8"
-  }
+  },
 });
