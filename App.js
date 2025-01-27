@@ -96,36 +96,49 @@ export default function App() {
   // Functions
   //=================
   function setNotifications(data) {
-    const thirtyMinutes = 30 * 60;
+    const thirtyMinutes = 30 * 60 * 1000;
     const now = new Date().getTime();
 
     data.forEach(task => {
       const taskTime = new Date(task.timeStamp).getTime();
       const leftTime = taskTime - now;
-      let reminderTime = leftTime > thirtyMinutes ? (leftTime - thirtyMinutes) : 0;
-      if (leftTime <= 0) {
+      if (taskTime < now) {
         Notifications.scheduleNotificationAsync({
           content: {
             title: "Todo App",
             body: `The due date for task ${task.title.toUpperCase()} has expired!"`
           },
           trigger: {
-            seconds: reminderTime
+            seconds: 0
           }
         });
-      }else{
+      }else if (leftTime <= thirtyMinutes && leftTime > 0){
         Notifications.scheduleNotificationAsync({
           content: {
             title: "Todo App",
-            body: `It's the time to do task ${task.title.toUpperCase()}! You have ${reminderTime == 10? "less than" : ""} 30 minutes left!"`
+            body: `It's the time to do task ${task.title.toUpperCase()}! You have less than 30 minutes left!"`
           },
           trigger: {
-            seconds: reminderTime
+            seconds: 0
+          }
+        });
+      }else{
+        const reminderTime = taskTime - thirtyMinutes;
+        const triggerTime = (reminderTime - now) / 1000; 
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Todo App",
+            body: `It's the time to do task ${task.title.toUpperCase()}! You have 30 minutes left!"`
+          },
+          trigger: {
+            // trigers immidiatly event with hardcoded values
+            seconds: triggerTime
           }
         });
       }
     })
   };
+  
   function checkInput(){
     let countOfErrors = 0;
     if (title.length < 1) {
@@ -143,6 +156,9 @@ export default function App() {
     if (!fullTimeInfo?.dateSet || !fullTimeInfo?.timeSet) {
       countOfErrors++;
     }
+    if (image.length < 5) {
+      countOfErrors++;
+    }
     if (countOfErrors == 0) {
       return true
     }else{
@@ -152,7 +168,7 @@ export default function App() {
 
   function saveTask() {
     const date = getCurrentDate();
-    const taskObject = {title, description, date, location, id:uuidv4(), completed: false, image, selectedLocation, timeStamp: fullTimeInfo.timeStamp};
+    const taskObject = {title, description, date, location, id:uuidv4(), completed: false, image, selectedLocation, timeStamp: fullTimeInfo.timeStamp.toISOString()};
     setNotifications([taskObject]);
     setData(currentData => {
       const updatedData = currentData?.length ? [...currentData, taskObject] : [taskObject];
@@ -371,7 +387,7 @@ export default function App() {
                           <Text style={styles.taskInfo}>{item.description}</Text>
                         </View>
                         <View style={[styles.taskTextContainer, styles.dateColor]}>
-                          <Text style={styles.taskLabel}>Date: </Text>
+                          <Text style={styles.taskLabel}>Created: </Text>
                           <Text style={styles.taskInfo}>{item.date}</Text>
                         </View>
                         <View style={[styles.taskTextContainer, styles.locationColor]}>
@@ -383,7 +399,7 @@ export default function App() {
                           setIsVisible(true);
                           setSelectedTask(item);
                           }}>
-                          <Text>More info</Text>
+                          <Text style={{fontSize:16,marginVertical:5 }}>More info</Text>
                         </Pressable>
                       </View>
                       <View style={{minWidth:"40"}}>
@@ -410,8 +426,8 @@ export default function App() {
                   <CustomInputView placeholder="Location" value={location} setValue={setLocation} error={locationError} />
                   <View>
                     {image && <Image source={{uri: image}} style={{width: 80, marginHorizontal:"auto",height: 80,borderRadius: 100}} />}
-                    <Pressable onPress={pickupDocument}>
-                      <Text style={{textAlign:"center", color: image?.length < 1? "red" : "green"}}>Select file</Text>
+                    <Pressable style={{marginVertical: 5}} onPress={pickupDocument}>
+                      <Text style={{textAlign:"center",  fontSize:16, color: image?.length < 1? "red" : "green"}}>{image?.length ? "Image selected" : "Select image" }</Text>
                     </Pressable>
                   </View>
                   <MapView
@@ -427,8 +443,8 @@ export default function App() {
                     }}
                     initialRegion={initialRegion}
                   />
-                  <Pressable onPress={current => setShowDatePicker(true)}>
-                      <Text style={{textAlign:"center", color: selectedDate?.length < 1? "red" : "green"}}>{selectedDate.length ? selectedDate : "Select Date"}</Text>
+                  <Pressable style={{marginVertical: 5}} onPress={current => setShowDatePicker(true)}>
+                      <Text style={{textAlign:"center", fontSize:16, color: selectedDate?.length < 1? "red" : "green"}}>{selectedDate.length ? selectedDate : "Select date"}</Text>
                   </Pressable>
                   {showDatePicker &&
                     <DateTimePicker
@@ -438,8 +454,8 @@ export default function App() {
                       onChange={onChangeDate}
                     />
                   }
-                  <Pressable onPress={current => setShowTimePicker(true)}>
-                      <Text style={{textAlign:"center", color: selectedTime?.length < 1? "red" : "green"}}>{selectedTime.length ? selectedTime : "Select time"}</Text>
+                  <Pressable style={{marginVertical: 5}} onPress={current => setShowTimePicker(true)}>
+                      <Text style={{textAlign:"center", fontSize:16, color: selectedTime?.length < 1? "red" : "green"}}>{selectedTime.length ? selectedTime : "Select time"}</Text>
                   </Pressable>
                   {showTimePicker &&
                     <DateTimePicker
@@ -473,12 +489,16 @@ export default function App() {
                 }
                 {/* MORE DETAILS CLICKED */}
                 {showTaskDetails && <View style={{opacity: showContent? 1 : 0}}>
-                  <Text>{selectedTask.timeStamp 
-                  ? `${getDateString(selectedTask.timeStamp)}`
-                  :"No Selected date" }</Text>
-                  <Image source={{uri: selectedTask.image? selectedTask.image : "https://picsum.photos/200" }} style={{width: 80, marginHorizontal:"auto",height: 80,borderRadius: 100}}/>
+                  <View style={[styles.taskTextContainer, styles.upcomingDateColor]}>
+                    <Text style={styles.taskLabel}>Date: </Text>
+                    <Text style={styles.taskInfo}>{selectedTask.timeStamp 
+                    ? `${getDateString(selectedTask.timeStamp)}`
+                    :"No Selected date" }</Text>
+
+                  </View>
+                  <Image  source={{uri: selectedTask.image? selectedTask.image : "https://picsum.photos/200" }} style={styles.taskImage}/>
                   <MapView
-                    style={{ flex: 1, maxHeight: 200 }}
+                    style={styles.taskMap}
                     onRegionChangeComplete={region => {
                       const  {latitude,longitude,latitudeDelta,longitudeDelta} = region;
                       setSelectedLocation(initialRegion);
@@ -609,12 +629,24 @@ const styles = StyleSheet.create({
     width:"90%",
     color:"#3A3A3A",
   },
+  taskImage: {
+    marginVertical: 3,
+    width: 80,
+    marginHorizontal:"auto",
+    height: 80,
+    borderRadius: 100
+  },
+  taskMap: {
+    flex: 1, 
+    maxHeight: 200,
+    marginVertical: 3,
+  },
   showMoreButton: {
     marginVertical: 3,
     borderRadius: 20,
     paddingVertical: 5,
     paddingHorizontal: 15,
-    width:"30%",
+    width:"32%",
     color:"#3A3A3A",
   },
   taskLabel: {
@@ -638,5 +670,8 @@ const styles = StyleSheet.create({
   },
   locationColor: {
     backgroundColor: "#FFF8E8"
+  },
+  upcomingDateColor: {
+    backgroundColor: "#FFE8E8"
   },
 });
